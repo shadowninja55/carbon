@@ -1,0 +1,82 @@
+all := fn f, xs {
+  for x in xs { 
+    if !f(x) { return false } 
+  }
+  true
+}
+
+any := fn f, xs {
+  for x in xs { 
+    if f(x) { return true } }
+  false
+}
+
+elem := fn x, xs {
+  for y in xs {
+    if x == y {
+      return true
+    }
+  }
+  false
+}
+
+filter := fn f, xs {
+  ys := []
+  for x in xs {
+    if f(x) {
+      push(ys, x)
+    }
+  }
+  ys
+}
+
+join := fn x, xs {
+  s := ""
+  for i in 0..(length(xs) - 1) {
+    s = s + if i > 0 { x } else { "" } + xs[i]
+  }
+  s
+}
+
+map := fn f, xs {
+  ys := []
+  for x in xs {
+    push(ys, f(x))
+  }
+  ys
+}
+
+repeat := fn n, x {
+  xs := []
+  for _ in 1..n {
+    push(xs, clone(x))
+  }
+  xs
+}
+
+reverse := fn xs {
+  count := length(xs)
+  ys := repeat(count, unit)
+  for i in 0..(count - 1) {
+    ys[count - i - 1] = xs[i]
+  }
+  ys
+}
+
+sum := fn xs {
+  acc := 0
+  for x in xs { acc = acc + x }
+  acc
+}
+
+transpose := fn mat {
+  height := length(mat)
+  width := length(mat[0])
+  res := repeat(width, repeat(height, unit))
+  for y in 0..(height - 1) {
+    for x in 0..(width - 1) {
+      res[x][y] = mat[y][x]
+    }
+  }
+  res
+}

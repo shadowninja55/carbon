@@ -1,0 +1,44 @@
+BOARD := repeat(3, repeat(3, " "))
+
+display_board := fn {
+  for row in BOARD {
+    print(join(" | ", row))
+  }
+}
+
+won_game := fn player {
+  win := repeat(3, player)
+  for board in [BOARD, transpose(BOARD)] {
+    for row in board {
+      if row == win {
+        return true
+      }
+    }
+  }
+  diag := fn board {
+    map(fn i { board[i][i] }, 0..2)
+  }
+  diag(BOARD) == win || diag(map(reverse, BOARD)) == win
+}
+
+draw := fn {
+  all(fn row { !elem(" ", row) }, BOARD)
+}
+
+player := "x"
+game_over := false
+
+while !game_over {
+  display_board()
+  pos := eval(prompt("player: " + player + ", position: ")) - 1
+  BOARD[pos / 3][pos % 3] = player
+  if won_game(player) { 
+    display_board()
+    print("game over, the winner is " + player + "!")
+    game_over = true 
+  } else if draw() {
+    print("game over, it's a draw!")
+    game_over = true
+  }
+  player = if player == "x" { "o" } else { "x" }
+}

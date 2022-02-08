@@ -1,17 +1,13 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ViewPatterns #-}
-
 module Eval where
 
 import qualified AST
-import Control.Arrow ((>>>))
 import Control.Monad.Except
 import Control.Monad.Loops
 import Control.Monad.State
-import Data.Either (fromRight)
 import Data.Foldable
 import Data.Functor
 import Data.IORef
@@ -33,9 +29,11 @@ data Value =
 type Scope = M.Map AST.Name (IORef Value)
 type Interpreter = ExceptT Value (StateT [Scope] IO)
 
+builtins :: M.Map AST.Name Value
 builtins = M.fromList
   [ ("clone", Builtin bClone)
   , ("eval", Builtin bEval)
+  , ("include", Builtin bInclude)
   , ("length", Builtin bLength)
   , ("print", Builtin bPrint)
   , ("prompt", Builtin bPrompt)
@@ -52,6 +50,12 @@ bClone [arg] = case arg of
 
 bEval :: [Value] -> Interpreter Value
 bEval [String arg] = eval $ parseExpr arg
+
+bInclude :: [Value] -> Interpreter Value
+bInclude [String arg] = do
+  source <- liftIO $ readFile arg
+  let Right program = parseProgram source
+  Unit <$ traverse_ eval program
 
 bLength :: [Value] -> Interpreter Value
 bLength = \case 
@@ -239,7 +243,7 @@ evalInfix op left right = case (op, left, right) of
     AST.GreaterOp -> Bool $ x > y
     AST.GreaterEqOp -> Bool $ x >= y
     _ -> error "eval: unimplemented infix operator for type `Num`"
-  (op, x, y) -> do
+  (_, x, y) -> do
     sx <- showValue x
     sy <- showValue y
     error $ "eval: unimplemented infix expression `" ++ sx ++ " " ++ show op
@@ -273,11 +277,5 @@ evalExprs = \case
 
 interpret :: [AST.Expr] -> IO ()
 interpret program = do
-  builtinSource <- readFile "builtin.cb"
-  let Right stdlibProgram = parseProgram builtinSource
-  defaultGlobalEnv <- traverse newIORef builtins
-  void $ runStateT (runExceptT $ start stdlibProgram) [defaultGlobalEnv]
- where
-  start builtinProgram = do
-    traverse_ eval builtinProgram
-    traverse_ eval program
+  globalEnv <- traverse newIORef builtins
+  void $ runStateT (runExceptT $ traverse_ eval program) [globalEnv]

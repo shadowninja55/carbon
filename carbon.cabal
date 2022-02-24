@@ -25,7 +25,6 @@ executable carbon
     main-is:          Main.hs
     other-modules:
         AST
-        CLI
         Eval
         Parser
     build-depends:    
@@ -37,6 +36,7 @@ executable carbon
         , megaparsec
         , monad-loops
         , mtl
+        , structured-cli
         , vector
     hs-source-dirs:   app
     default-language: Haskell2010

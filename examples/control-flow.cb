@@ -1,0 +1,19 @@
+arr := [1, 2, 3]
+for n in arr {
+  print(n)
+}
+
+i := length(arr) - 1
+while i >= 0 {
+  print(arr[i])
+  i = i - 1
+}
+
+meaning_of_life := 42
+if false {
+  print("false?")
+} else if meaning_of_life == 42 {
+  print("the meaning of life is 42")
+} else {
+  print("hmm...")
+}

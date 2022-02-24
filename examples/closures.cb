@@ -1,0 +1,12 @@
+print_and_inc := fn {
+  x := 0
+  fn { 
+    print(x)
+    x = x + 1
+  }
+}
+
+printer := print_and_inc()
+printer()
+printer()
+printer()

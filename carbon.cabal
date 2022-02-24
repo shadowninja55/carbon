@@ -25,6 +25,7 @@ executable carbon
     main-is:          Main.hs
     other-modules:
         AST
+        CLI
         Eval
         Parser
     build-depends:    

@@ -27,11 +27,13 @@ executable carbon
         AST
         Eval
         Parser
+        Paths_carbon
     build-depends:    
         , base ^>=4.14.3.0
         , array
         , containers
         , grow-vector
+        , optparse-applicative
         , parser-combinators
         , megaparsec
         , monad-loops

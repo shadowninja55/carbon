@@ -1,15 +1,16 @@
-{-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE LambdaCase #-}
-module Parser where
+module Carbon.Parser 
+  ( parseExpr
+  , parseProgram 
+  ) where
 
-import AST
+import Carbon.AST
 import Control.Arrow ((>>>))
 import qualified Control.Monad.Combinators.Expr as E 
 import Data.Functor
+import Data.Void (Void)
 import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
-import Data.Void (Void)
 
 type Parser = Parsec Void String
 
@@ -150,10 +151,12 @@ while = do
   cond <- expr
   While cond <$> block
 
-parseExpr :: String -> Expr
+parseExpr :: String -> Either String Expr
 parseExpr = parse (expr <* eof) "" >>> \case
-  Right ast -> ast 
-  Left _ -> error "eval: failed to parse expression passed to builtin `eval`"
+  Right ast -> Right ast 
+  Left err -> Left $ errorBundlePretty err
 
-parseProgram :: String -> Either (ParseErrorBundle String Void) [Expr]
-parseProgram = parse (program <* eof) ""
+parseProgram :: String -> Either String [Expr]
+parseProgram = parse (program <* eof) "" >>> \case
+  Right ast -> Right ast
+  Left err -> Left $ errorBundlePretty err

@@ -1,4 +1,4 @@
-module AST where
+module Carbon.AST where
 
 type Name = String
 type Block = [Expr]

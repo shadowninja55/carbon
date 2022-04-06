@@ -1,15 +1,13 @@
-{-# LANGUAGE LambdaCase #-}
 module Main where
 
 import Control.Arrow ((>>>))
+import Carbon.Eval
+import Carbon.Parser
 import Data.Foldable
 import Data.Version (showVersion)
-import Eval (interpret)
-import qualified Options.Applicative as O
+import Options.Applicative qualified as O
 import Options.Applicative.Extra (helperWith)
-import Parser (parseProgram)
 import Paths_carbon (version)
-import Text.Megaparsec (errorBundlePretty)
 
 data Mode =
   Interpret
@@ -25,8 +23,8 @@ main = do
     Interpret -> case maybePath of
       Nothing -> putStrLn "error: no file provided to interpret"
       Just path -> (readFile path >>=) $ parseProgram >>> \case
-        Left err -> putStrLn $ errorBundlePretty err
         Right ast -> interpret ast
+        Left err -> putStrLn err
  where
   helper = helperWith $ O.long "help" <> O.short 'h' <> O.help "show this help text"
 

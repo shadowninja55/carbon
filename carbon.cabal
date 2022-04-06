@@ -1,6 +1,6 @@
 cabal-version:      2.4
 name:               carbon
-version:            0.1.0.0
+version:            0.2.0.0
 
 -- A short (one-line) description of the package.
 -- synopsis:
@@ -21,26 +21,41 @@ maintainer:         shadowninja1050@gmail.com
 -- category:
 extra-source-files: CHANGELOG.md
 
+common base
+  default-language:   GHC2021
+  default-extensions:
+    NoStarIsType
+    BlockArguments
+    LambdaCase
+    LexicalNegation
+    NoFieldSelectors
+    OverloadedRecordDot
+
+  build-depends:      base ^>=4.16.0.0
+
+library
+  import:          base
+  hs-source-dirs:  src
+  exposed-modules:
+    Carbon.AST
+    Carbon.Eval
+    Carbon.Parser
+
+  build-depends:
+    , containers
+    , data-vector-growable
+    , megaparsec
+    , monad-loops
+    , mtl
+    , parser-combinators
+    , vector
+
 executable carbon
-    main-is:          Main.hs
-    other-modules:
-        AST
-        Eval
-        Parser
-        Paths_carbon
-    build-depends:    
-        , base ^>=4.14.3.0
-        , array
-        , containers
-        , grow-vector
-        , optparse-applicative
-        , parser-combinators
-        , megaparsec
-        , monad-loops
-        , mtl
-        , structured-cli
-        , vector
-    hs-source-dirs:   app
-    default-language: Haskell2010
-    ghc-options:
-        -Wall
+  import:         base
+  hs-source-dirs: app
+  main-is:        Main.hs
+  other-modules:  Paths_carbon
+  build-depends:  
+    , carbon
+    , optparse-applicative
+  ghc-options:    -Wall

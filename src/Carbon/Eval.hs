@@ -1,10 +1,10 @@
-{-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ViewPatterns #-}
-module Eval where
+module Carbon.Eval 
+  ( interpret 
+  ) where
 
-import qualified AST
+import Carbon.AST qualified as AST
+import Carbon.Parser
 import Control.Monad.Except
 import Control.Monad.Loops
 import Control.Monad.State
@@ -12,14 +12,13 @@ import Data.Foldable
 import Data.Functor
 import Data.IORef
 import Data.List (intercalate)
-import qualified Data.Map as M
-import qualified Data.Vector as V
-import qualified Data.Vector.Grow as GV
-import Parser (parseExpr, parseProgram)
+import Data.Map qualified as M
+import Data.Vector qualified as V
+import Data.Vector.Growable qualified as GV
 import System.IO (hFlush, stdout)
 
 data Value = 
-  Array (GV.IOGrowVector Value)
+  Array (GV.GrowableIOVector Value)
   | Bool Bool
   | Builtin ([Value] -> Interpreter Value)
   | Closure [AST.Name] [AST.Expr] [Scope]
@@ -49,12 +48,16 @@ bClone [arg] = case arg of
   value -> pure value
 
 bEval :: [Value] -> Interpreter Value
-bEval [String arg] = eval $ parseExpr arg
+bEval [String arg] = case parseExpr arg of
+  Right expr -> eval expr
+  Left err -> error $ "eval: failed to parse expression passed to builtin `eval`\n" <> err
 
 bInclude :: [Value] -> Interpreter Value
 bInclude [String arg] = do
   source <- liftIO $ readFile arg
-  let Right program = parseProgram source
+  let program = case parseProgram source of
+       Right program -> program
+       Left err -> error $ "eval: failed to parse expression passed to builtin `include`\n" <> err
   Unit <$ traverse_ eval program
 
 bLength :: [Value] -> Interpreter Value
@@ -77,7 +80,7 @@ bPrompt [String arg] = String <$> liftIO do
   getLine
 
 bPush :: [Value] -> Interpreter Value
-bPush [Array array, value] = Unit <$ GV.pushBack array value
+bPush [Array array, value] = Unit <$ GV.push array value
 
 bShow :: [Value] -> Interpreter Value
 bShow [arg] = String <$> showValue arg
@@ -112,15 +115,12 @@ mutateVar name value = do
 
 eqValue :: Value -> Value -> Interpreter Bool
 eqValue = curry $ \case
-  (Array xs, Array ys) -> do
-    lxs <- GV.length xs
-    lys <- GV.length ys
-    if lxs == lys
-      then do
-        xs' <- V.toList <$> GV.freeze xs
-        ys' <- V.toList <$> GV.freeze ys
-        and <$> zipWithM eqValue xs' ys'
-      else pure False
+  (Array xs, Array ys) -> (==) <$> GV.length xs <*> GV.length ys >>= \case
+    True -> do
+      xs' <- V.toList <$> GV.freeze xs
+      ys' <- V.toList <$> GV.freeze ys
+      and <$> zipWithM eqValue xs' ys'
+    False -> pure False
   (Bool x, Bool y) -> pure $ x == y
   (Unit, Unit) -> pure True
   (Num x, Num y) -> pure $ x == y
@@ -220,9 +220,9 @@ evalInfix op left right = case (op, left, right) of
   (AST.AddOp, Array xs, Array ys) -> do
     vxs <- GV.freeze xs
     vys <- GV.freeze ys
-    zs <- GV.new $ V.length vxs + V.length vys
-    traverse_ (GV.pushBack zs) vxs
-    traverse_ (GV.pushBack zs) vys
+    zs <- GV.withCapacity $ V.length vxs + V.length vys
+    traverse_ (GV.push zs) vxs
+    traverse_ (GV.push zs) vys
     pure $ Array zs
   (AST.AddOp, String x, String y) -> pure . String $ x ++ y
   (AST.EqEqOp, _, _) -> Bool <$> eqValue left right

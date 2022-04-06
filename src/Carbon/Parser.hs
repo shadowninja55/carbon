@@ -45,7 +45,6 @@ expr = E.makeExprParser atom table
  where
   atom = choice 
     [ arrayLit
-    , try declare
     , boolLit
     , for
     , function
@@ -56,29 +55,48 @@ expr = E.makeExprParser atom table
     , numLit 
     , while
     , var
-    , parens expr ]
+    , parens expr 
+    ]
   table = 
     [ [ E.Postfix calls
-      , E.Postfix indexes ]
+      , E.Postfix indexes 
+      ]
     , [ prefix "-" NegOp
-      , prefix "!" NotOp ]
-    , [ binary ".." RangeOp ]
-    , [ binary "*" MulOp
-      , binary "/" DivOp 
-      , binary "%" ModOp ]
-    , [ binary "+" AddOp
-      , binary "-" SubOp ]
+      , prefix "!" NotOp 
+      ]
+    , [ binary ".." RangeOp 
+      ]
+    , [ binary' "*" MulOp
+      , binary' "/" DivOp 
+      , binary' "%" ModOp 
+      ]
+    , [ binary' "+" AddOp
+      , binary' "-" SubOp 
+      ]
     , [ binary "<=" LessEqOp
       , binary ">=" GreaterEqOp
       , binary "<" LessOp 
-      , binary ">" GreaterOp ]
+      , binary ">" GreaterOp 
+      ]
     , [ binary "==" EqEqOp
-      , binary "!=" NotEqOp ]
-    , [ binary "&&" AndOp ]
-    , [ binary "||" OrOp ] 
-    , [ binary "=" EqOp ]
+      , binary "!=" NotEqOp 
+      ]
+    , [ binary "&&" AndOp 
+      ]
+    , [ binary "||" OrOp 
+      ]
+    , [ binary "=" EqOp 
+      , binary ":=" DeclOp
+      , binary "+=" AddEqOp
+      , binary "-=" SubEqOp
+      , binary "*=" MulEqOp
+      , binary "/=" DivEqOp
+      , binary "%=" ModEqOp
+      ]
     ]
   binary s op = E.InfixL $ Infix op <$ symbol s
+  binary' s op = E.InfixL $ Infix op <$ try (symbol s <* notFollowedBy (symbol "="))
+    -- for operators with compound counterparts
   prefix s op = E.Prefix $ Prefix op <$ symbol s
 
 arrayLit :: Parser Expr
@@ -93,12 +111,6 @@ calls :: Parser (Expr -> Expr)
 calls = do
   apps <- some . parens $ commaSep expr
   pure $ \fn -> foldl Call fn apps
-
-declare :: Parser Expr
-declare = do
-  varName <- name
-  symbol ":="
-  Declare varName <$> expr
 
 for :: Parser Expr
 for = do

@@ -103,9 +103,7 @@ getVar name = gets search >>= liftIO . readIORef
       Just value -> value
 
 mutateVar :: AST.Name -> Value -> Interpreter ()
-mutateVar name value = do
-  mutation <- gets mutate
-  liftIO mutation
+mutateVar name value = gets mutate >>= liftIO
  where
   mutate = \case
     [] -> error $ "mutateVar: variable `" ++ name ++ "` not found"
@@ -154,10 +152,6 @@ eval = \case
       Builtin f -> f args
       fn@Closure {} -> evalCall fn args
       _ -> error "eval: only a function or builtin can be called"
-  AST.Declare name expr -> do
-    value <- eval expr
-    declareVar name value
-    pure value
   AST.For name arrayExpr block -> do
     Array array <- eval arrayExpr
     values <- V.toList <$> GV.freeze array
@@ -179,15 +173,21 @@ eval = \case
       Array array -> GV.read array index
       String string -> pure $ String [string !! index]
       _ -> error "eval: invalid type for `Index` expression"
-  AST.Infix AST.EqOp lvalue rvalue -> evalAssign lvalue rvalue
+  AST.Infix AST.DeclOp (AST.Var name) rvalue -> do
+    value <- eval rvalue 
+    declareVar name value
+    pure value
+  AST.Infix op lvalue rvalue 
+    | op `elem` [AST.AddEqOp, AST.DivEqOp, AST.EqOp, AST.ModEqOp, AST.MulEqOp, AST.SubEqOp] 
+    -> evalAssign op lvalue rvalue
   AST.Infix op leftExpr rightExpr -> do
     (left, right) <- (,) <$> eval leftExpr <*> eval rightExpr
     evalInfix op left right 
   AST.UnitLit -> pure Unit
   AST.NumLit num -> pure $ Num num
   AST.Prefix op expr -> (op ,) <$> eval expr <&> \case
+    (AST.NegOp, Num n) -> Num -n
     (AST.NotOp, Bool bool) -> Bool $ not bool
-    (AST.NegOp, Num n) -> Num $ -n
     _ -> error "eval: invalid `Prefix` expression"
   AST.Return expr -> get >>= \case
     [_] -> error "eval: `return` not allowed at top level"
@@ -196,24 +196,32 @@ eval = \case
   AST.Var name -> getVar name
   AST.While cond block -> Unit <$ whileM_ (evalCond cond) (evalBlock block M.empty)
 
-evalAssign :: AST.Expr -> AST.Expr -> Interpreter Value
-evalAssign lvalue rvalue = do
-  value <- eval rvalue
+evalAssign :: AST.Op -> AST.Expr -> AST.Expr -> Interpreter Value
+evalAssign op lvalue rvalue = do
+  value <- eval $ case op of
+    AST.EqOp -> rvalue
+    op -> AST.Infix (fromCompound op) lvalue rvalue
   case lvalue of
     AST.Var name -> do
       mutateVar name value
-      pure value
     AST.Index arrayExpr indexExpr -> do 
       Array array <- eval arrayExpr
       Num index <- eval indexExpr
       GV.write array index value
-      pure value
     _ -> error "eval: invalid lvalue for assignment"
+  pure value
+ where
+  fromCompound = \case
+    AST.AddEqOp -> AST.AddOp
+    AST.DivEqOp -> AST.DivOp
+    AST.ModEqOp -> AST.ModOp
+    AST.MulEqOp -> AST.MulOp
+    AST.SubEqOp -> AST.SubOp
 
 evalCond :: AST.Expr -> Interpreter Bool
 evalCond cond = eval cond <&> \case
   Bool bool -> bool
-  _ -> error "eval: condition of loop must be of type Bool"
+  _ -> error "eval: condition must be of type `Bool`"
 
 evalInfix :: AST.Op -> Value -> Value -> Interpreter Value
 evalInfix op left right = case (op, left, right) of

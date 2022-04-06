@@ -6,10 +6,16 @@ type Block = [Expr]
 data Op = 
   EqOp
   | AddOp
+  | AddEqOp
+  | DeclOp
   | DivOp
+  | DivEqOp
   | ModOp
+  | ModEqOp
   | MulOp
+  | MulEqOp
   | SubOp
+  | SubEqOp
   | EqEqOp
   | NotEqOp
   | LessOp
@@ -27,7 +33,6 @@ data Expr =
   ArrayLit [Expr]
   | BoolLit Bool
   | Call Expr [Expr]
-  | Declare Name Expr
   | For Name Expr Block
   | Function [Name] Block
   | If Expr Block Block

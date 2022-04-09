@@ -42,6 +42,8 @@ data Expr =
   | Prefix Op Expr
   | Return Expr
   | StringLit String
+  | Throw Expr
+  | TryCatch Block Name Block
   | UnitLit
   | Var Name
   | While Expr Block

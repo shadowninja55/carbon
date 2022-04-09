@@ -51,6 +51,8 @@ expr = E.makeExprParser atom table
     , if_
     , return_
     , stringLit
+    , throw
+    , tryCatch
     , unitLit
     , numLit 
     , while
@@ -147,6 +149,18 @@ return_ = symbol "return" *> (Return <$> option UnitLit expr)
 
 stringLit :: Parser Expr
 stringLit = StringLit <$> lexeme (char '"' *> manyTill L.charLiteral (char '"'))
+
+throw :: Parser Expr
+throw = symbol "throw" *> (Throw <$> expr)
+
+tryCatch :: Parser Expr
+tryCatch = do
+  symbol "try"
+  body <- block
+  symbol "catch"
+  errName <- name
+  catchBody <- block
+  pure $ TryCatch body errName catchBody
 
 unitLit :: Parser Expr
 unitLit = symbol "unit" $> UnitLit

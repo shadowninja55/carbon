@@ -209,6 +209,12 @@ eval = \case
     [_] -> throwString "return not allowed at top level"
     _ -> eval expr >>= throwError
   AST.StringLit string -> pure $ String string
+  AST.Throw expr -> eval expr >>= throwError . Exception
+  AST.TryCatch body errName catchBody -> runErrorNoCallStack @Exception (evalBlock body M.empty) >>= \case
+    Right value -> pure value
+    Left (Exception value) -> do
+      err <- liftIO $ newIORef value 
+      evalBlock catchBody $ M.singleton errName err
   AST.Var name -> getVar name
   AST.While cond block -> Unit <$ whileM_ (evalCond cond) (evalBlock block M.empty)
 

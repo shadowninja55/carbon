@@ -1,3 +1,5 @@
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns #-}
 module Carbon.Eval 
   ( interpret 
@@ -5,9 +7,8 @@ module Carbon.Eval
 
 import Carbon.AST qualified as AST
 import Carbon.Parser
-import Control.Monad.Except
+import Control.Monad (join, zipWithM)
 import Control.Monad.Loops
-import Control.Monad.State
 import Data.Foldable
 import Data.Functor
 import Data.IORef
@@ -15,18 +16,23 @@ import Data.List (intercalate)
 import Data.Map qualified as M
 import Data.Vector qualified as V
 import Data.Vector.Growable qualified as GV
+import Effectful
+import Effectful.Error.Static
+import Effectful.State.Static.Local
 import System.IO (hFlush, stdout)
 
-data Value = 
-  Array (GV.GrowableIOVector Value)
+data Value 
+  = Array (GV.GrowableIOVector Value)
   | Bool Bool
-  | Builtin ([Value] -> Interpreter Value)
+  | Builtin Builtin
   | Closure [AST.Name] [AST.Expr] [Scope]
   | Unit
   | Num Int
   | String String
 type Scope = M.Map AST.Name (IORef Value)
-type Interpreter = ExceptT Value (StateT [Scope] IO)
+type Builtin = forall es. Interpreter :>> es => [Value] -> Eff es Value 
+type Interpreter = [Error Exception, Error Value, IOE, State [Scope]]
+newtype Exception = Exception Value
 
 builtins :: M.Map AST.Name Value
 builtins = M.fromList
@@ -40,84 +46,82 @@ builtins = M.fromList
   , ("show", Builtin bShow) 
   ]
 
-bClone :: [Value] -> Interpreter Value
+bClone :: Builtin
 bClone [arg] = case arg of
-  Array array -> do
-    array' <- GV.freeze array
-    Array <$> GV.thaw array'
+  Array array -> Array <$> liftIO (GV.freeze array >>= GV.thaw)
   value -> pure value
 
-bEval :: [Value] -> Interpreter Value
+bEval :: Builtin
 bEval [String arg] = case parseExpr arg of
   Right expr -> eval expr
-  Left err -> error $ "eval: failed to parse expression passed to builtin `eval`\n" <> err
+  Left err -> throwString $ "failed to parse expression passed to builtin `eval`\n" <> err
 
-bInclude :: [Value] -> Interpreter Value
+bInclude :: Builtin
 bInclude [String arg] = do
   source <- liftIO $ readFile arg
-  let program = case parseProgram source of
-       Right program -> program
-       Left err -> error $ "eval: failed to parse expression passed to builtin `include`\n" <> err
+  program <- case parseProgram source of
+       Right program -> pure program
+       Left err -> throwString $ "failed to parse expression passed to builtin `include`\n" <> err
   Unit <$ traverse_ eval program
 
-bLength :: [Value] -> Interpreter Value
+bLength :: Builtin
 bLength = \case 
-  [Array array] -> Num <$> GV.length array
+  [Array array] -> Num <$> liftIO (GV.length array)
   [String string] -> pure . Num $ length string
 
-bPrint :: [Value] -> Interpreter Value
+bPrint :: Builtin
 bPrint [arg] = do
-  String string <- case arg of
+  value <- case arg of
     string@(String _) -> pure string
     value -> bShow [value]
-  liftIO $ putStrLn string
-  pure Unit
+  case value of
+    String s -> Unit <$ liftIO (putStrLn s)
 
-bPrompt :: [Value] -> Interpreter Value
+bPrompt :: Builtin
 bPrompt [String arg] = String <$> liftIO do
   putStr arg
   hFlush stdout
   getLine
 
-bPush :: [Value] -> Interpreter Value
-bPush [Array array, value] = Unit <$ GV.push array value
+bPush :: Builtin
+bPush [Array array, value] = Unit <$ liftIO (GV.push array value)
 
-bShow :: [Value] -> Interpreter Value
+bShow :: Builtin
 bShow [arg] = String <$> showValue arg
 
 -- HELPERS
-declareVar :: AST.Name -> Value -> Interpreter ()
+declareVar :: Interpreter :>> es => AST.Name -> Value -> Eff es ()
 declareVar name value = do
   ref <- liftIO $ newIORef value
   modify $ declare ref
  where
   declare ref (scope : scopes) = M.insert name ref scope : scopes
 
-getVar :: AST.Name -> Interpreter Value
-getVar name = gets search >>= liftIO . readIORef
+getVar :: Interpreter :>> es => AST.Name -> Eff es Value
+getVar name = join $ gets search
  where
   search = \case 
-    [] -> error $ "getVar: variable `" ++ name ++ "` not found"
+    [] -> throwString $ "variable `" ++ name ++ "` not found"
     scope : scopes -> case M.lookup name scope of
       Nothing -> search scopes
-      Just value -> value
+      Just value -> liftIO $ readIORef value
 
-mutateVar :: AST.Name -> Value -> Interpreter ()
-mutateVar name value = gets mutate >>= liftIO
+mutateVar :: Interpreter :>> es => AST.Name -> Value -> Eff es ()
+mutateVar name value = join $ gets mutate
  where
   mutate = \case
-    [] -> error $ "mutateVar: variable `" ++ name ++ "` not found"
+    [] -> throwString $ "variable `" ++ name ++ "` not found"
     scope : scopes -> case M.lookup name scope of
       Nothing -> mutate scopes
-      Just ref -> writeIORef ref value
+      Just ref -> liftIO $ writeIORef ref value
 
-eqValue :: Value -> Value -> Interpreter Bool
-eqValue = curry $ \case
-  (Array xs, Array ys) -> (==) <$> GV.length xs <*> GV.length ys >>= \case
+eqValueIO :: Value -> Value -> IO Bool
+eqValueIO = curry $ \case
+  (Array xs, Array ys) -> (==) <$> liftIO (GV.length xs) <*> liftIO (GV.length ys) >>= \case
     True -> do
-      xs' <- V.toList <$> GV.freeze xs
-      ys' <- V.toList <$> GV.freeze ys
-      and <$> zipWithM eqValue xs' ys'
+      xs' <- V.toList <$> liftIO (GV.freeze xs)
+      ys' <- V.toList <$> liftIO (GV.freeze ys)
+      and <$> zipWithM eqValueIO xs' ys'
     False -> pure False
   (Bool x, Bool y) -> pure $ x == y
   (Unit, Unit) -> pure True
@@ -125,11 +129,16 @@ eqValue = curry $ \case
   (String x, String y) -> pure $ x == y
   _ -> pure False
 
-showValue :: Value -> Interpreter String
-showValue = \case
+eqValue :: Interpreter :>> es => Value -> Value -> Eff es Bool
+eqValue = liftIO .: eqValueIO
+ where
+  (.:) = (.) . (.)
+
+showValueIO :: Value -> IO String
+showValueIO = \case
   Array array -> do
-    values <- V.toList <$> GV.freeze array
-    shown <- traverse showValue values
+    values <- V.toList <$> liftIO (GV.freeze array)
+    shown <- traverse showValueIO values
     pure $ "[" ++ intercalate ", " shown ++ "]"
   Bool False -> pure "false"
   Bool True -> pure "true"
@@ -139,24 +148,31 @@ showValue = \case
   Num n -> pure $ show n
   String string -> pure $ show string
 
+showValue :: Interpreter :>> es => Value -> Eff es String
+showValue = liftIO . showValueIO
+
+throwString :: Error Exception :> es => String -> Eff es a
+throwString = throwError . Exception . String
+
 -- EVAL
-eval :: AST.Expr -> Interpreter Value
+eval :: Interpreter :>> es => AST.Expr -> Eff es Value
 eval = \case
   AST.ArrayLit exprs -> do
     values <- traverse eval exprs
-    Array <$> GV.thaw (V.fromList values)
+    Array <$> liftIO (GV.thaw $ V.fromList values)
   AST.BoolLit bool -> pure $ Bool bool
   AST.Call fnExpr argExprs -> do
     args <- traverse eval argExprs
     eval fnExpr >>= \case
       Builtin f -> f args
       fn@Closure {} -> evalCall fn args
-      _ -> error "eval: only a function or builtin can be called"
-  AST.For name arrayExpr block -> do
-    Array array <- eval arrayExpr
-    values <- V.toList <$> GV.freeze array
-    traverse_ evalBody values
-    pure Unit
+      _ -> throwString "only a function or builtin can be called"
+  AST.For name arrayExpr block -> eval arrayExpr >>= \case
+    Array array -> do
+      values <- V.toList <$> liftIO (GV.freeze array)
+      traverse_ evalBody values
+      pure Unit
+    _ -> throwString "for loops can only iterate over arrays"
    where
     evalBody value = do
       ref <- liftIO $ newIORef value
@@ -167,12 +183,12 @@ eval = \case
   AST.If cond block elseBlock -> evalCond cond >>= \case
     True -> evalBlock block M.empty
     False -> evalBlock elseBlock M.empty
-  AST.Index arrayExpr indexExpr -> do
-    Num index <- eval indexExpr
-    eval arrayExpr >>= \case
-      Array array -> GV.read array index
+  AST.Index arrayExpr indexExpr -> eval indexExpr >>= \case
+    Num index -> eval arrayExpr >>= \case
+      Array array -> liftIO (GV.read array index)
       String string -> pure $ String [string !! index]
-      _ -> error "eval: invalid type for `Index` expression"
+      _ -> throwString "value cannot be indexed into"
+    value -> throwString "value cannot be used as index"
   AST.Infix AST.DeclOp (AST.Var name) rvalue -> do
     value <- eval rvalue 
     declareVar name value
@@ -185,30 +201,30 @@ eval = \case
     evalInfix op left right 
   AST.UnitLit -> pure Unit
   AST.NumLit num -> pure $ Num num
-  AST.Prefix op expr -> (op ,) <$> eval expr <&> \case
-    (AST.NegOp, Num n) -> Num -n
-    (AST.NotOp, Bool bool) -> Bool $ not bool
-    _ -> error "eval: invalid `Prefix` expression"
-  AST.Return expr -> get >>= \case
-    [_] -> error "eval: `return` not allowed at top level"
+  AST.Prefix op expr -> (op ,) <$> eval expr >>= \case
+    (AST.NegOp, Num n) -> pure $ Num -n
+    (AST.NotOp, Bool bool) -> pure . Bool $ not bool
+    _ -> throwString "invalid prefix expression"
+  AST.Return expr -> get @[Scope] >>= \case
+    [_] -> throwString "return not allowed at top level"
     _ -> eval expr >>= throwError
   AST.StringLit string -> pure $ String string
   AST.Var name -> getVar name
   AST.While cond block -> Unit <$ whileM_ (evalCond cond) (evalBlock block M.empty)
 
-evalAssign :: AST.Op -> AST.Expr -> AST.Expr -> Interpreter Value
+evalAssign :: Interpreter :>> es => AST.Op -> AST.Expr -> AST.Expr -> Eff es Value
 evalAssign op lvalue rvalue = do
   value <- eval $ case op of
     AST.EqOp -> rvalue
     op -> AST.Infix (fromCompound op) lvalue rvalue
   case lvalue of
-    AST.Var name -> do
-      mutateVar name value
-    AST.Index arrayExpr indexExpr -> do 
-      Array array <- eval arrayExpr
-      Num index <- eval indexExpr
-      GV.write array index value
-    _ -> error "eval: invalid lvalue for assignment"
+    AST.Var name -> mutateVar name value
+    AST.Index arrayExpr indexExpr -> eval arrayExpr >>= \case
+      Array array -> eval indexExpr >>= \case
+        Num index -> liftIO $ GV.write array index value
+        _ -> throwString "value cannot be used as index"
+      _ -> throwString "value cannot be indexed into"
+    _ -> throwString "invalid lvalue for assignment"
   pure value
  where
   fromCompound = \case
@@ -218,14 +234,14 @@ evalAssign op lvalue rvalue = do
     AST.MulEqOp -> AST.MulOp
     AST.SubEqOp -> AST.SubOp
 
-evalCond :: AST.Expr -> Interpreter Bool
-evalCond cond = eval cond <&> \case
-  Bool bool -> bool
-  _ -> error "eval: condition must be of type `Bool`"
+evalCond :: Interpreter :>> es => AST.Expr -> Eff es Bool
+evalCond cond = eval cond >>= \case
+  Bool bool -> pure bool
+  _ -> throwString "condition must be of type `Bool`"
 
-evalInfix :: AST.Op -> Value -> Value -> Interpreter Value
+evalInfix :: Interpreter :>> es => AST.Op -> Value -> Value -> Eff es Value
 evalInfix op left right = case (op, left, right) of
-  (AST.AddOp, Array xs, Array ys) -> do
+  (AST.AddOp, Array xs, Array ys) -> liftIO do
     vxs <- GV.freeze xs
     vys <- GV.freeze ys
     zs <- GV.withCapacity $ V.length vxs + V.length vys
@@ -239,51 +255,60 @@ evalInfix op left right = case (op, left, right) of
   (AST.OrOp, Bool x, Bool y) -> pure . Bool $ x || y
   (AST.RangeOp, Num x, Num y) -> do
     let range = V.generate (y - x + 1) (Num . (+ x))
-    Array <$> GV.thaw range
-  (_, Num x, Num y) -> pure $ case op of
-    AST.AddOp -> Num $ x + y
-    AST.SubOp -> Num $ x - y
-    AST.MulOp -> Num $ x * y
-    AST.DivOp -> Num $ x `div` y
-    AST.ModOp -> Num $ x `mod` y
-    AST.LessOp -> Bool $ x < y
-    AST.LessEqOp -> Bool $ x <= y
-    AST.GreaterOp -> Bool $ x > y
-    AST.GreaterEqOp -> Bool $ x >= y
-    _ -> error "eval: unimplemented infix operator for type `Num`"
-  (_, x, y) -> do
-    sx <- showValue x
-    sy <- showValue y
-    error $ "eval: unimplemented infix expression `" ++ sx ++ " " ++ show op
-      ++ " " ++ sy ++ "`"
+    Array <$> liftIO (GV.thaw range)
+  (_, Num x, Num y) -> case op of
+    AST.AddOp -> pure . Num $ x + y
+    AST.SubOp -> pure . Num $ x - y
+    AST.MulOp -> pure . Num $ x * y
+    AST.DivOp -> pure . Num $ x `div` y
+    AST.ModOp -> pure . Num $ x `mod` y
+    AST.LessOp -> pure . Bool $ x < y
+    AST.LessEqOp -> pure . Bool $ x <= y
+    AST.GreaterOp -> pure . Bool $ x > y
+    AST.GreaterEqOp -> pure . Bool $ x >= y
+    _ -> throwString "invalid infix expression"
+  _ -> throwString "invalid infix expression"
 
-evalBlock :: [AST.Expr] -> Scope -> Interpreter Value
+evalBlock :: Interpreter :>> es => [AST.Expr] -> Scope -> Eff es Value
 evalBlock block env = do
   modify (env :)
   result <- evalExprs block
-  modify tail
+  modify @[Scope] tail
   pure result
 
-evalCall :: Value -> [Value] -> Interpreter Value
+evalCall :: Interpreter :>> es => Value -> [Value] -> Eff es Value
 evalCall (Closure params body closureScopes) args = do
   argRefs <- liftIO $ traverse newIORef args
   let bodyEnv = M.fromList $ zip params argRefs
   globalEnv <- gets last
-  (either id id -> result, last -> globalEnv') <- liftIO $ runStateT 
-    (runExceptT $ evalExprs body) ((bodyEnv : closureScopes) ++ [globalEnv])
-  modify $ update globalEnv'
+  (either id id -> result, env') <- runState (bodyEnv : closureScopes ++ [globalEnv])
+    . runErrorNoCallStack @Value
+    $ evalExprs body
+  modify . update $ last env'
   pure result
  where
   update globalEnv' scopes = init scopes ++ [globalEnv']
-evalCall _ _ = error "eval: only a function can be called"
+evalCall _ _ = throwString "invalid type in call expression"
 
-evalExprs :: [AST.Expr] -> Interpreter Value
+evalExprs :: Interpreter :>> es => [AST.Expr] -> Eff es Value
 evalExprs = \case
   [] -> pure Unit
   [expr] -> eval expr
-  expr:exprs -> eval expr *> evalExprs exprs
+  expr : exprs -> eval expr *> evalExprs exprs
 
 interpret :: [AST.Expr] -> IO ()
 interpret program = do
   globalEnv <- traverse newIORef builtins
-  void $ runStateT (runExceptT $ traverse_ eval program) [globalEnv]
+  result <- runEff 
+    . runErrorNoCallStack @Exception
+    . void
+    . runError @Value
+    . runState [globalEnv] 
+    $ traverse_ eval program
+  case result of
+    Left (Exception value) -> do
+      s <- case value of 
+        String s -> pure s
+        v -> showValueIO value
+      putStrLn $ "unhandled exception: " <> s
+    _ -> pure ()

@@ -1,6 +1,6 @@
 cabal-version:      2.4
 name:               carbon
-version:            0.2.1.0
+version:            0.3.1.0
 
 -- A short (one-line) description of the package.
 -- synopsis:
@@ -42,20 +42,21 @@ library
     Carbon.Parser
 
   build-depends:
-    , containers >= 0.6.5 && < 0.7
-    , data-vector-growable >= 0.0.1 && < 0.1
-    , megaparsec >= 9.2.0 && < 9.3
-    , monad-loops >= 0.4.3 && < 0.5
-    , mtl >= 2.2.2 && < 2.3
-    , parser-combinators >= 1.3.0 && < 1.4
-    , vector >= 0.12.3 && < 0.13
+    , containers            ^>=0.6.5
+    , data-vector-growable  ^>=0.0.1
+    , effectful
+    , megaparsec            ^>=9.2.0
+    , monad-loops           ^>=0.4.3
+    , parser-combinators    ^>=1.3.0
+    , vector                ^>=0.12.3
 
 executable carbon
   import:         base
   hs-source-dirs: app
   main-is:        Main.hs
   other-modules:  Paths_carbon
-  build-depends:  
+  build-depends:
     , carbon
-    , optparse-applicative >= 0.17.0 && < 0.18
+    , optparse-applicative  ^>=0.17.0
+
   ghc-options:    -Wall

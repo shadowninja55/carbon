@@ -1,24 +1,9 @@
 cabal-version:      2.4
 name:               carbon
-version:            0.4.1.0
-
--- A short (one-line) description of the package.
--- synopsis:
-
--- A longer description of the package.
--- description:
-
--- A URL where users can report bugs.
--- bug-reports:
-
--- The license under which the package is released.
--- license:
+version:            0.4.2
 author:             shadowninja55
 maintainer:         shadowninja1050@gmail.com
-
--- A copyright notice.
--- copyright:
--- category:
+homepage:           https://github.com/shadowninja55/carbon
 extra-source-files: CHANGELOG.md
 
 common base
@@ -32,6 +17,7 @@ common base
     OverloadedRecordDot
 
   build-depends:      base ^>=4.16.0.0
+  ghc-options:        -Wall
 
 library
   import:          base
@@ -58,5 +44,3 @@ executable carbon
   build-depends:
     , carbon
     , optparse-applicative  ^>=0.17.0
-
-  ghc-options:    -Wall

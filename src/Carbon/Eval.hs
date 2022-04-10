@@ -10,6 +10,7 @@ import Carbon.Parser
 import Control.Monad (join, zipWithM)
 import Control.Monad.Loops
 import Data.Foldable
+import Data.Function ((&))
 import Data.Functor
 import Data.IORef
 import Data.List (intercalate)
@@ -21,6 +22,16 @@ import Effectful.Error.Static
 import Effectful.State.Static.Local
 import System.IO (hFlush, stdout)
 
+data Builtin
+  = Clone
+  | Eval
+  | Include
+  | Length
+  | Print
+  | Prompt
+  | Push
+  | Show
+type BuiltinRep = forall es. Interpreter :>> es => [Value] -> Eff es Value
 data Value 
   = Array (GV.GrowableIOVector Value)
   | Bool Bool
@@ -30,33 +41,32 @@ data Value
   | Num Int
   | String String
 type Scope = M.Map AST.Name (IORef Value)
-type Builtin = forall es. Interpreter :>> es => [Value] -> Eff es Value 
 type Interpreter = [Error Exception, Error Value, IOE, State [Scope]]
 newtype Exception = Exception Value
 
 builtins :: M.Map AST.Name Value
 builtins = M.fromList
-  [ ("clone", Builtin bClone)
-  , ("eval", Builtin bEval)
-  , ("include", Builtin bInclude)
-  , ("length", Builtin bLength)
-  , ("print", Builtin bPrint)
-  , ("prompt", Builtin bPrompt)
-  , ("push", Builtin bPush)
-  , ("show", Builtin bShow) 
+  [ ("clone", Builtin Clone)
+  , ("eval", Builtin Eval)
+  , ("include", Builtin Include)
+  , ("length", Builtin Length)
+  , ("print", Builtin Print)
+  , ("prompt", Builtin Prompt)
+  , ("push", Builtin Push)
+  , ("show", Builtin Show) 
   ]
 
-bClone :: Builtin
+bClone :: BuiltinRep
 bClone [arg] = case arg of
   Array array -> Array <$> liftIO (GV.freeze array >>= GV.thaw)
   value -> pure value
 
-bEval :: Builtin
+bEval :: BuiltinRep
 bEval [String arg] = case parseExpr arg of
   Right expr -> eval expr
   Left err -> throwString $ "failed to parse expression passed to builtin `eval`\n" <> err
 
-bInclude :: Builtin
+bInclude :: BuiltinRep
 bInclude [String arg] = do
   source <- liftIO $ readFile arg
   program <- case parseProgram source of
@@ -64,12 +74,12 @@ bInclude [String arg] = do
        Left err -> throwString $ "failed to parse expression passed to builtin `include`\n" <> err
   Unit <$ traverse_ eval program
 
-bLength :: Builtin
+bLength :: BuiltinRep
 bLength = \case 
   [Array array] -> Num <$> liftIO (GV.length array)
   [String string] -> pure . Num $ length string
 
-bPrint :: Builtin
+bPrint :: BuiltinRep
 bPrint [arg] = do
   value <- case arg of
     string@(String _) -> pure string
@@ -77,16 +87,16 @@ bPrint [arg] = do
   case value of
     String s -> Unit <$ liftIO (putStrLn s)
 
-bPrompt :: Builtin
+bPrompt :: BuiltinRep
 bPrompt [String arg] = String <$> liftIO do
   putStr arg
   hFlush stdout
   getLine
 
-bPush :: Builtin
+bPush :: BuiltinRep
 bPush [Array array, value] = Unit <$ liftIO (GV.push array value)
 
-bShow :: Builtin
+bShow :: BuiltinRep
 bShow [arg] = String <$> showValue arg
 
 -- HELPERS
@@ -164,7 +174,15 @@ eval = \case
   AST.Call fnExpr argExprs -> do
     args <- traverse eval argExprs
     eval fnExpr >>= \case
-      Builtin f -> f args
+      Builtin builtin -> args & case builtin of
+        Clone -> bClone 
+        Eval -> bEval
+        Include -> bInclude
+        Length -> bLength 
+        Print -> bPrint
+        Prompt -> bPrompt
+        Push -> bPush
+        Show -> bShow
       fn@Closure {} -> evalCall fn args
       _ -> throwString "only a function or builtin can be called"
   AST.For name arrayExpr block -> eval arrayExpr >>= \case
@@ -188,7 +206,7 @@ eval = \case
       Array array -> liftIO (GV.read array index)
       String string -> pure $ String [string !! index]
       _ -> throwString "value cannot be indexed into"
-    value -> throwString "value cannot be used as index"
+    _ -> throwString "value cannot be used as index"
   AST.Infix AST.DeclOp (AST.Var name) rvalue -> do
     value <- eval rvalue 
     declareVar name value
@@ -313,8 +331,6 @@ interpret program = do
     $ traverse_ eval program
   case result of
     Left (Exception value) -> do
-      s <- case value of 
-        String s -> pure s
-        v -> showValueIO value
+      s <- showValueIO value
       putStrLn $ "unhandled exception: " <> s
     _ -> pure ()

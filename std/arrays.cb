@@ -33,7 +33,7 @@ filter := fn f, xs {
 join := fn x, xs {
   s := ""
   for i in 0..(length(xs) - 1) {
-    s = s + if i > 0 { x } else { "" } + xs[i]
+    s += if i > 0 { x } else { "" } + xs[i]
   }
   s
 }
@@ -65,7 +65,7 @@ reverse := fn xs {
 
 sum := fn xs {
   acc := 0
-  for x in xs { acc = acc + x }
+  for x in xs { acc += x }
   acc
 }
 

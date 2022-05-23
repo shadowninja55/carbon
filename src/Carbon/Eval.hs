@@ -1,16 +1,19 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ViewPatterns #-}
 module Carbon.Eval 
-  ( interpret 
-  ) where
+  ( Config ( Config )
+  , interpret 
+) where
 
 import Carbon.AST qualified as AST
 import Carbon.Parser
+import Control.Applicative
 import Control.Monad (join, zipWithM)
 import Control.Monad.Loops
 import Data.Foldable
-import Data.Function ((&))
+import Data.Function
 import Data.Functor
 import Data.IORef
 import Data.List (intercalate)
@@ -19,7 +22,9 @@ import Data.Vector qualified as V
 import Data.Vector.Growable qualified as GV
 import Effectful
 import Effectful.Error.Static
+import Effectful.Reader.Static
 import Effectful.State.Static.Local
+import Path
 import System.IO (hFlush, stdout)
 
 data Builtin
@@ -32,6 +37,12 @@ data Builtin
   | Push
   | Show
 type BuiltinRep = forall es. Interpreter :>> es => [Value] -> Eff es Value
+data Config = Config 
+  { includePath :: Path Abs Dir
+  }
+newtype Exception = Exception Value
+type Interpreter = [Error Exception, Error Value, IOE, Reader Config, State [Scope]]
+type Scope = M.Map AST.Name (IORef Value)
 data Value 
   = Array (GV.GrowableIOVector Value)
   | Bool Bool
@@ -40,9 +51,6 @@ data Value
   | Unit
   | Num Int
   | String String
-type Scope = M.Map AST.Name (IORef Value)
-type Interpreter = [Error Exception, Error Value, IOE, State [Scope]]
-newtype Exception = Exception Value
 
 builtins :: M.Map AST.Name Value
 builtins = M.fromList
@@ -68,11 +76,13 @@ bEval [String arg] = case parseExpr arg of
 
 bInclude :: BuiltinRep
 bInclude [String arg] = do
-  source <- liftIO $ readFile arg
-  program <- case parseProgram source of
-       Right program -> pure program
-       Left err -> throwString $ "failed to parse expression passed to builtin `include`\n" <> err
-  Unit <$ traverse_ eval program
+  includePath <- asks @Config (.includePath)
+  filePath <- parseRelFile arg
+  (liftIO . optional . readFile . toFilePath $ includePath </> filePath) >>= \case
+    Nothing -> throwString $ "failed to open file `" <> arg <> "` passed to builtin `include`"
+    Just source -> case parseProgram source of
+      Right program -> traverse_ eval program $> Unit
+      Left err -> throwString $ "failed to parse expression passed to builtin `include`\n" <> err
 
 bLength :: BuiltinRep
 bLength = \case 
@@ -228,7 +238,7 @@ eval = \case
     _ -> eval expr >>= throwError
   AST.StringLit string -> pure $ String string
   AST.Throw expr -> eval expr >>= throwError . Exception
-  AST.TryCatch body errName catchBody -> runErrorNoCallStack @Exception (evalBlock body M.empty) >>= \case
+  AST.Try body errName catchBody -> runErrorNoCallStack @Exception (evalBlock body M.empty) >>= \case
     Right value -> pure value
     Left (Exception value) -> do
       err <- liftIO $ newIORef value 
@@ -240,7 +250,7 @@ evalAssign :: Interpreter :>> es => AST.Op -> AST.Expr -> AST.Expr -> Eff es Val
 evalAssign op lvalue rvalue = do
   value <- eval $ case op of
     AST.EqOp -> rvalue
-    op -> AST.Infix (fromCompound op) lvalue rvalue
+    _ -> AST.Infix (fromCompound op) lvalue rvalue
   case lvalue of
     AST.Var name -> mutateVar name value
     AST.Index arrayExpr indexExpr -> eval arrayExpr >>= \case
@@ -320,13 +330,14 @@ evalExprs = \case
   [expr] -> eval expr
   expr : exprs -> eval expr *> evalExprs exprs
 
-interpret :: [AST.Expr] -> IO ()
-interpret program = do
+interpret :: Config -> [AST.Expr] -> IO ()
+interpret config program = do
   globalEnv <- traverse newIORef builtins
   result <- runEff 
     . runErrorNoCallStack @Exception
     . void
     . runError @Value
+    . runReader config
     . runState [globalEnv] 
     $ traverse_ eval program
   case result of

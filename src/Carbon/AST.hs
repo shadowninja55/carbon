@@ -3,8 +3,8 @@ module Carbon.AST where
 type Name = String
 type Block = [Expr]
 
-data Op = 
-  EqOp
+data Op 
+  = EqOp
   | AddOp
   | AddEqOp
   | DeclOp
@@ -29,8 +29,8 @@ data Op =
   | RangeOp
   deriving (Eq, Show)
 
-data Expr = 
-  ArrayLit [Expr]
+data Expr 
+  = ArrayLit [Expr]
   | BoolLit Bool
   | Call Expr [Expr]
   | For Name Expr Block
@@ -43,7 +43,7 @@ data Expr =
   | Return Expr
   | StringLit String
   | Throw Expr
-  | TryCatch Block Name Block
+  | Try Block Name Block
   | UnitLit
   | Var Name
   | While Expr Block

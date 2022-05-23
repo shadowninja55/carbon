@@ -160,7 +160,7 @@ tryCatch = do
   symbol "catch"
   errName <- name
   catchBody <- block
-  pure $ TryCatch body errName catchBody
+  pure $ Try body errName catchBody
 
 unitLit :: Parser Expr
 unitLit = symbol "unit" $> UnitLit

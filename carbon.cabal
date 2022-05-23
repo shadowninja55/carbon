@@ -1,10 +1,20 @@
 cabal-version:      2.4
 name:               carbon
-version:            0.4.3
-author:             shadowninja55
+version:            0.4.4
+synopsis:           Interpreter for the Carbon programming language
+category:           Compilers/Interpreters
+license:            MIT
+license-file:       LICENSE
+author:             Mark Stein
 maintainer:         shadowninja1050@gmail.com
 homepage:           https://github.com/shadowninja55/carbon
+bug-reports:        https://github.com/shadowninja55/carbon/issues
 extra-source-files: CHANGELOG.md
+data-dir:           libs
+
+source-repository head
+  type:     git
+  location: https://github.com/shadowninja55/carbon
 
 common base
   default-language:   GHC2021
@@ -16,7 +26,9 @@ common base
     NoFieldSelectors
     OverloadedRecordDot
 
-  build-depends:      base ^>=4.16.0.0
+  build-depends:      
+    , base ^>=4.16.1.0
+    , path
   ghc-options:        -Wall
 
 library
@@ -31,16 +43,19 @@ library
     , containers            ^>=0.6.5
     , data-vector-growable  ^>=0.0.1
     , effectful
+    , lens
     , megaparsec            ^>=9.2.0
     , monad-loops           ^>=0.4.3
     , parser-combinators    ^>=1.3.0
     , vector                ^>=0.12.3
 
 executable carbon
-  import:         base
-  hs-source-dirs: app
-  main-is:        Main.hs
-  other-modules:  Paths_carbon
+  import:          base
+  hs-source-dirs:  app
+  main-is:         Main.hs
   build-depends:
     , carbon
     , optparse-applicative  ^>=0.17.0
+
+  autogen-modules: Paths_carbon
+  other-modules:   Paths_carbon

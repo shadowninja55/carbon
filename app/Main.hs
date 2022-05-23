@@ -1,6 +1,5 @@
 module Main where
 
-import Control.Arrow ((>>>))
 import Carbon.Eval
 import Carbon.Parser
 import Data.Foldable

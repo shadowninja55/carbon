@@ -22,13 +22,15 @@ block :: Parser [Expr]
 block = between (symbol "{") (symbol "}") (many space1 *> program)
 
 commaSep :: Parser a -> Parser [a]
-commaSep p = p `sepBy` symbol ","
+commaSep = (`sepBy` symbol ",")
 
 lexeme :: Parser a -> Parser a
 lexeme = L.lexeme hspace
 
 name :: Parser Name
-name = lexeme $ (:) <$> (letterChar <|> char '_') <*> many (alphaNumChar <|> char '_')
+name = lexeme $ (:) 
+  <$> (letterChar <|> oneOf "_'") 
+  <*> many (alphaNumChar <|> oneOf "_'")
 
 parens :: Parser a -> Parser a
 parens = between (symbol "(") (symbol ")")

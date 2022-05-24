@@ -1,6 +1,6 @@
 cabal-version:      2.4
 name:               carbon
-version:            0.4.4
+version:            0.4.5
 synopsis:           Interpreter for the Carbon programming language
 category:           Compilers/Interpreters
 license:            MIT

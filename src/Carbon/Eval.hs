@@ -200,7 +200,8 @@ eval = \case
       values <- V.toList <$> liftIO (GV.freeze array)
       traverse_ evalBody values
       pure Unit
-    _ -> throwString "for loops can only iterate over arrays"
+    String string -> traverse_ (evalBody . String . pure) string $> Unit
+    _ -> throwString "value is not iterable"
    where
     evalBody value = do
       ref <- liftIO $ newIORef value

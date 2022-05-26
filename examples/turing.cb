@@ -1,0 +1,23 @@
+include("std/arrays.cb")
+
+binary := "00010011011111"
+tape := map(fn bit { bit == "1" }, binary) 
+
+while true {
+  tape = [false] + tape + [false]    
+  tape' := []
+  for i in 0..(length(tape) - 3) {
+    three := [tape[i], tape[i + 1], tape[i + 2]]
+    push(tape', !elem(three, [
+      [true, true, true], 
+      [true, false, false], 
+      [false, false, false]
+    ]))
+  }
+  tape = tape'
+  binary := ""
+  for bit in tape {
+    binary += if bit { "□" } else { " " }
+  }
+  print(binary)
+}

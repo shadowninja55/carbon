@@ -104,7 +104,8 @@ expr = E.makeExprParser atom table
   prefix s op = E.Prefix $ Prefix op <$ symbol s
 
 arrayLit :: Parser Expr
-arrayLit = ArrayLit <$> brackets (commaSep expr)
+arrayLit = ArrayLit <$> brackets 
+  (many space1 *> commaSep (many space1 *> expr) <* many space1)
 
 boolLit :: Parser Expr
 boolLit = BoolLit <$> choice 

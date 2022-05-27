@@ -181,20 +181,7 @@ eval = \case
     values <- traverse eval exprs
     Array <$> liftIO (GV.thaw $ V.fromList values)
   AST.BoolLit bool -> pure $ Bool bool
-  AST.Call fnExpr argExprs -> do
-    args <- traverse eval argExprs
-    eval fnExpr >>= \case
-      Builtin builtin -> args & case builtin of
-        Clone -> bClone 
-        Eval -> bEval
-        Include -> bInclude
-        Length -> bLength 
-        Print -> bPrint
-        Prompt -> bPrompt
-        Push -> bPush
-        Show -> bShow
-      fn@Closure {} -> evalCall fn args
-      _ -> throwString "only a function or builtin can be called"
+  AST.Call fnExpr argExprs -> evalCall fnExpr argExprs
   AST.For name arrayExpr block -> eval arrayExpr >>= \case
     Array array -> do
       values <- V.toList <$> liftIO (GV.freeze array)
@@ -222,12 +209,16 @@ eval = \case
     value <- eval rvalue 
     declareVar name value
     pure value
-  AST.Infix op lvalue rvalue 
-    | op `elem` [AST.AddEqOp, AST.DivEqOp, AST.EqOp, AST.ModEqOp, AST.MulEqOp, AST.SubEqOp] 
-    -> evalAssign op lvalue rvalue
-  AST.Infix op leftExpr rightExpr -> do
-    (left, right) <- (,) <$> eval leftExpr <*> eval rightExpr
-    evalInfix op left right 
+  AST.Infix op leftExpr rightExpr 
+    | op `elem` [AST.AddEqOp, AST.DivEqOp, AST.EqOp, AST.ModEqOp, AST.MulEqOp, AST.SubEqOp] -> evalAssign op leftExpr rightExpr
+    | op == AST.DotOp -> do 
+      case rightExpr of
+        AST.Call fnExpr argsExpr -> evalCall fnExpr (leftExpr : argsExpr)
+        _ -> throwString "error nyi"
+    | otherwise -> do
+      left <- eval leftExpr
+      right <- eval rightExpr
+      evalInfix op left right 
   AST.UnitLit -> pure Unit
   AST.NumLit num -> pure $ Num num
   AST.Prefix op expr -> (op ,) <$> eval expr >>= \case
@@ -301,8 +292,12 @@ evalInfix op left right = case (op, left, right) of
     AST.LessEqOp -> pure . Bool $ x <= y
     AST.GreaterOp -> pure . Bool $ x > y
     AST.GreaterEqOp -> pure . Bool $ x >= y
-    _ -> throwString "invalid infix expression"
-  _ -> throwString "invalid infix expression"
+    _ -> throwString "invalid infix expression "
+  _ -> do
+    showValue left >>= liftIO . print
+    showValue right >>= liftIO . print
+    liftIO $ print op
+    throwString $ "invalid infix expression " <> show op 
 
 evalBlock :: Interpreter :>> es => [AST.Expr] -> Scope -> Eff es Value
 evalBlock block env = do
@@ -311,19 +306,31 @@ evalBlock block env = do
   modify @[Scope] tail
   pure result
 
-evalCall :: Interpreter :>> es => Value -> [Value] -> Eff es Value
-evalCall (Closure params body closureScopes) args = do
-  argRefs <- liftIO $ traverse newIORef args
-  let bodyEnv = M.fromList $ zip params argRefs
-  globalEnv <- gets last
-  (either id id -> result, env') <- runState (bodyEnv : closureScopes ++ [globalEnv])
-    . runErrorNoCallStack @Value
-    $ evalExprs body
-  modify . update $ last env'
-  pure result
+evalCall :: Interpreter :>> es => AST.Expr -> [AST.Expr] -> Eff es Value
+evalCall fnExpr argExprs = do
+  args <- traverse eval argExprs
+  eval fnExpr >>= \case
+    Builtin builtin -> args & case builtin of
+      Clone -> bClone 
+      Eval -> bEval
+      Include -> bInclude
+      Length -> bLength 
+      Print -> bPrint
+      Prompt -> bPrompt
+      Push -> bPush
+      Show -> bShow
+    Closure params body closureScopes -> do
+      argRefs <- liftIO $ traverse newIORef args
+      let bodyEnv = M.fromList $ zip params argRefs
+      globalEnv <- gets last
+      (either id id -> result, env') <- runState (bodyEnv : closureScopes ++ [globalEnv])
+        . runErrorNoCallStack @Value
+        $ evalExprs body
+      modify . update $ last env'
+      pure result
+    _ -> throwString "only a function or builtin can be called"
  where
   update globalEnv' scopes = init scopes ++ [globalEnv']
-evalCall _ _ = throwString "invalid type in call expression"
 
 evalExprs :: Interpreter :>> es => [AST.Expr] -> Eff es Value
 evalExprs = \case

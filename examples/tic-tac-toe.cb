@@ -1,16 +1,16 @@
 include("std/arrays.cb")
 
-BOARD := repeat(3, repeat(3, " "))
+BOARD := " ".repeat(3).repeat(3)
 
-display_board := fn {
+display_board := fn { 
   for row in BOARD {
-    print(join(" | ", row))
+    print(row.join(" | "))
   }
 }
 
 won_game := fn player {
-  win := repeat(3, player)
-  for board in [BOARD, transpose(BOARD)] {
+  win := player.repeat(3)
+  for board in [BOARD, BOARD.transpose()] {
     for row in board {
       if row == win {
         return true
@@ -18,13 +18,13 @@ won_game := fn player {
     }
   }
   diag := fn board {
-    map(fn i { board[i][i] }, 0..2)
+    (0..2).map(fn i { board[i][i] })
   }
-  diag(BOARD) == win || diag(map(reverse, BOARD)) == win
+  diag(BOARD) == win || diag(BOARD.map(reverse)) == win
 }
 
 draw := fn {
-  all(fn row { !elem(" ", row) }, BOARD)
+  BOARD.all(fn row { !row.has(" ") })
 }
 
 player := "x"

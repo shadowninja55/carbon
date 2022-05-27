@@ -64,6 +64,7 @@ expr = E.makeExprParser atom table
   table = 
     [ [ E.Postfix calls
       , E.Postfix indexes 
+      , dot
       ]
     , [ prefix "-" NegOp
       , prefix "!" NotOp 
@@ -101,6 +102,7 @@ expr = E.makeExprParser atom table
   binary s op = E.InfixL $ Infix op <$ symbol s
   binary' s op = E.InfixL $ Infix op <$ try (symbol s <* notFollowedBy (symbol "="))
     -- for operators with compound counterparts
+  dot = E.InfixL $ Infix DotOp <$ try (symbol "." <* notFollowedBy (symbol "."))
   prefix s op = E.Prefix $ Prefix op <$ symbol s
 
 arrayLit :: Parser Expr

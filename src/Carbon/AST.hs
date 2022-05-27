@@ -10,6 +10,7 @@ data Op
   | DeclOp
   | DivOp
   | DivEqOp
+  | DotOp
   | ModOp
   | ModEqOp
   | MulOp

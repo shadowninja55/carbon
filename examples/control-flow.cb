@@ -3,7 +3,7 @@ for n in arr {
   print(n)
 }
 
-i := length(arr) - 1
+i := arr.length() - 1
 while i >= 0 {
   print(arr[i])
   i -= 1

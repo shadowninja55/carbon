@@ -1,17 +1,27 @@
-all := fn f, xs {
+all := fn xs, f {
   for x in xs { 
     if !f(x) { return false } 
   }
   true
 }
 
-any := fn f, xs {
+any := fn xs, f {
   for x in xs { 
     if f(x) { return true } }
   false
 }
 
-elem := fn x, xs {
+filter := fn xs, f {
+  ys := []
+  for x in xs {
+    if f(x) {
+      ys.push(x)
+    }
+  }
+  ys
+}
+
+has := fn xs, x {
   for y in xs {
     if x == y {
       return true
@@ -20,43 +30,33 @@ elem := fn x, xs {
   false
 }
 
-filter := fn f, xs {
-  ys := []
-  for x in xs {
-    if f(x) {
-      push(ys, x)
-    }
-  }
-  ys
-}
-
-join := fn x, xs {
+join := fn xs, x {
   s := ""
-  for i in 0..(length(xs) - 1) {
+  for i in 0..(xs.length() - 1) {
     s += if i > 0 { x } else { "" } + xs[i]
   }
   s
 }
 
-map := fn f, xs {
+map := fn xs, f {
   ys := []
   for x in xs {
-    push(ys, f(x))
+    ys.push(f(x))
   }
   ys
 }
 
-repeat := fn n, x {
+repeat := fn x, n {
   xs := []
   for _ in 1..n {
-    push(xs, clone(x))
+    xs.push(x.clone())
   }
   xs
 }
 
 reverse := fn xs {
-  count := length(xs)
-  ys := repeat(count, unit)
+  count := xs.length()
+  ys := unit.repeat(count)
   for i in 0..(count - 1) {
     ys[count - i - 1] = xs[i]
   }
@@ -70,9 +70,9 @@ sum := fn xs {
 }
 
 transpose := fn mat {
-  height := length(mat)
-  width := length(mat[0])
-  res := repeat(width, repeat(height, unit))
+  height := mat.length()
+  width := mat[0].length()
+  res := unit.repeat(height).repeat(width)
   for y in 0..(height - 1) {
     for x in 0..(width - 1) {
       res[x][y] = mat[y][x]

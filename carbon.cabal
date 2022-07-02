@@ -43,7 +43,6 @@ library
     , containers            ^>=0.6.5
     , data-vector-growable  ^>=0.0.1
     , effectful
-    , lens
     , megaparsec            ^>=9.2.0
     , monad-loops           ^>=0.4.3
     , parser-combinators    ^>=1.3.0

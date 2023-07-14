@@ -27,7 +27,7 @@ common base
     OverloadedRecordDot
 
   build-depends:
-    , base  ^>=4.16.1.0
+    , base  ^>=4.16.4.0
     , path  ^>=0.9.2
 
   ghc-options:        -Wall
